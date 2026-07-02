@@ -1,0 +1,242 @@
+/*
+SPDX-FileCopyrightText: 2021 Hamed Masafi <hamed.masfi@gmail.com>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
+#include "commitdetails.h"
+#include "avatarview.h"
+#include "kommitwidgetsglobaloptions.h"
+
+#include <entities/commit.h>
+#include <models/commitsmodel.h>
+#include <repository.h>
+
+#include <KLocalizedString>
+#include <QDesktopServices>
+#include <QLocale>
+#include <QUrl>
+
+namespace
+{
+
+void showSignature(const Git::Signature &sign, AvatarView *avatarView, QLabel *nameLabel, QLabel *timeLabel, bool createLink)
+{
+    if (sign.isNull())
+        return;
+
+    avatarView->setUserEmail(sign.email());
+
+    QString label;
+    if (createLink)
+        label = QStringLiteral("<a href=\"mailto:%2\">%1 &lt;%2&gt;</a>");
+    else
+        label = QStringLiteral("%1 <%2>");
+
+    nameLabel->setText(label.arg(sign.name(), sign.email()));
+
+    auto cal = KommitWidgetsGlobalOptions::instance()->calendar();
+    if (cal.isValid())
+        timeLabel->setText(QLocale().toString(sign.time(), QStringLiteral("yyyy-MM-dd HH:mm:ss"), cal));
+    else
+        timeLabel->setText(QLocale().toString(sign.time()));
+}
+}
+
+CommitDetails::CommitDetails(QWidget *parent)
+    : QWidget(parent)
+{
+    setupUi(this);
+
+    connect(labelChangedFiles, &QLabel::linkActivated, this, &CommitDetails::fileClicked);
+    connect(labelParent, &QLabel::linkActivated, this, &CommitDetails::hashClicked);
+    connect(labelChildren, &QLabel::linkActivated, this, &CommitDetails::hashClicked);
+
+    connect(labelAuthor, &QLabel::linkActivated, this, &CommitDetails::slotEmailLinkClicked);
+    connect(labelCommitter, &QLabel::linkActivated, this, &CommitDetails::slotEmailLinkClicked);
+
+    connect(checkBoxMarkdownDisplay, &QCheckBox::toggled, this, &CommitDetails::slotMarkdownDisplayToggled);
+
+    stackedWidget->setCurrentIndex(0);
+}
+
+const Git::Commit &CommitDetails::commit() const
+{
+    return mCommit;
+}
+
+void CommitDetails::setCommit(const Git::Commit &commit)
+{
+    mCommit = commit;
+
+    stackedWidget->setCurrentIndex(commit.isNull() ? 0 : 1);
+    if (commit.isNull())
+        return;
+
+    labelCommitHash->setText(commit.commitHash());
+    labelCommitSubject->setText(commit.summary());
+    if (!commit.body().isEmpty()) {
+        labelCommitBody->setText(commit.body());
+        slotMarkdownDisplayToggled(checkBoxMarkdownDisplay->isChecked());
+        labelCommitBody->setVisible(true);
+        checkBoxMarkdownDisplay->setVisible(true);
+    } else {
+        labelCommitBody->setVisible(false);
+        checkBoxMarkdownDisplay->setVisible(false);
+    }
+
+    showSignature(commit.author(), labelAuthorAvatar, labelAuthor, labelAuthTime, mEnableEmailsLinks);
+    showSignature(commit.committer(), labelCommiterAvatar, labelCommitter, labelCommitTime, mEnableEmailsLinks);
+
+    widgetCommitterInfo->setVisible(!commit.isNull() && commit.author().email() != commit.committer().email());
+    labelCommitterText->setVisible(widgetCommitterInfo->isVisible());
+
+    labelChangedFiles->setText(createChangedFiles());
+
+    auto refs = commit.references();
+    if (refs.isEmpty()) {
+        labelRefType->setVisible(false);
+        labelRefName->setVisible(false);
+    } else {
+        QString refsText;
+        for (auto const &ref : refs) {
+            QString refText;
+            if (ref.isBranch())
+                refText = i18n("Branch: ");
+            else if (ref.isNote())
+                refText = i18n("Note: ");
+            else if (ref.isRemote())
+                refText = i18n("Remote: ");
+            else if (ref.isTag())
+                refText = i18n("Tag: ");
+            refText.append(ref.shorthand());
+
+            if (!refsText.isEmpty()) {
+                refsText.append(QStringLiteral(", "));
+            }
+            refsText.append(refText);
+        }
+        labelRefName->setText(refsText);
+        labelRefType->setText(refs.size() == 1 ? i18n("Ref:") : i18n("Refs:"));
+        labelRefType->setVisible(true);
+        labelRefName->setVisible(true);
+    }
+
+    auto parents = generateCommitsLink(commit.parents());
+    auto children = generateCommitsLink(commit.children());
+
+    labelParentsText->setVisible(!parents.isEmpty());
+    labelParent->setVisible(!parents.isEmpty());
+    labelParentsText->setText(i18np("Parent:", "Parents:", commit.parents().size()));
+    labelParent->setText(parents);
+
+    labelChildrenText->setVisible(!children.isEmpty());
+    labelChildren->setVisible(!children.isEmpty());
+    labelChildrenText->setText(i18np("Child:", "Children:", commit.children().size()));
+    labelChildren->setText(children);
+}
+
+bool CommitDetails::enableCommitsLinks() const
+{
+    return mEnableCommitsLinks;
+}
+
+void CommitDetails::setEnableCommitsLinks(bool enableCommitsLinks)
+{
+    if (mEnableCommitsLinks == enableCommitsLinks)
+        return;
+    mEnableCommitsLinks = enableCommitsLinks;
+    Q_EMIT enableCommitsLinksChanged();
+}
+
+bool CommitDetails::enableEmailsLinks() const
+{
+    return mEnableEmailsLinks;
+}
+
+void CommitDetails::setEnableEmailsLinks(bool enableEmailsLinks)
+{
+    if (mEnableEmailsLinks == enableEmailsLinks)
+        return;
+    mEnableEmailsLinks = enableEmailsLinks;
+    Q_EMIT enableEmailsLinksChanged();
+}
+
+bool CommitDetails::enableFilesLinks() const
+{
+    return mEnableFilesLinks;
+}
+
+void CommitDetails::setEnableFilesLinks(bool enableFilesLinks)
+{
+    if (mEnableFilesLinks == enableFilesLinks)
+        return;
+    mEnableFilesLinks = enableFilesLinks;
+    Q_EMIT enableFilesLinksChanged();
+}
+
+void CommitDetails::slotEmailLinkClicked(const QString &link)
+{
+    QDesktopServices::openUrl(QUrl{link});
+}
+
+void CommitDetails::slotMarkdownDisplayToggled(bool checked)
+{
+    labelCommitBody->setTextFormat(checked ? Qt::MarkdownText : Qt::PlainText);
+}
+
+QString CommitDetails::createChangedFiles()
+{
+    const auto files = Git::Repository::instance()->changedFiles(mCommit.commitHash());
+    QStringList filesHtml;
+
+    for (auto i = files.constBegin(); i != files.constEnd(); ++i) {
+        QColor color = KommitWidgetsGlobalOptions::instance()->statucColor(i.value());
+        // switch (i.value()) {
+        // case Git::ChangeStatus::Modified:
+        //     color = libkommitwi
+        //     break;
+        // case Git::ChangeStatus::Added:
+        //     color = mAddedFilesColor.name();
+        //     break;
+        // case Git::ChangeStatus::Removed:
+        //     color = mRemovedFilesColor.name();
+        //     break;
+
+        // default:
+        //     break;
+        // }
+        if (mEnableFilesLinks)
+            filesHtml.append(QStringLiteral("<span style=\"border: 1px solid gray; border-radius: 5px; background-color: %1; display: inline-block; width:10p; height:10px\">&nbsp;&nbsp;&nbsp;</span> <font color=%1><a href=\"%2\">%2</a></font>").arg(color.name(), i.key()));
+        else
+            filesHtml.append(QStringLiteral("<font color=%1>%2</a>").arg(color.name(), i.key()));
+    }
+
+    return filesHtml.join(QStringLiteral("<br />"));
+}
+
+QString CommitDetails::generateCommitLink(const QString &hash)
+{
+    QString subject = hash;
+    if (mLogsModel) {
+        auto commit = mLogsModel->findLogByHash(hash);
+        if (!commit.isNull())
+            subject = commit.message();
+    }
+    if (mEnableCommitsLinks)
+        return QStringLiteral(R"(<a href="%1">%2</a> )").arg(hash, subject);
+
+    return subject;
+}
+
+QString CommitDetails::generateCommitsLink(const QStringList &hashes)
+{
+    QStringList ret;
+    ret.reserve(hashes.count());
+    for (auto const &hash : hashes)
+        ret << generateCommitLink(hash);
+
+    return ret.join(QStringLiteral(", "));
+}
+
+#include "moc_commitdetails.cpp"

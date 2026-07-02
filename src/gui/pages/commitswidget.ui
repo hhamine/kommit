@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CommitsWidget</class>
+ <widget class="QWidget" name="CommitsWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>510</width>
+    <height>398</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Commits</string>
+  </property>
+  <property name="windowIcon">
+   <iconset theme="git-commit"/>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout_3">
+   <item>
+    <widget class="QSplitter" name="splitter_2">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <widget class="BranchesSelectionWidget" name="branchesView" native="true"/>
+     <widget class="QWidget" name="">
+      <layout class="QVBoxLayout" name="verticalLayout">
+       <item>
+        <widget class="QLineEdit" name="lineEditFilter">
+         <property name="placeholderText">
+          <string>Filter...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSplitter" name="splitter">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <widget class="TreeView" name="treeViewCommits">
+          <property name="rootIsDecorated">
+           <bool>false</bool>
+          </property>
+         </widget>
+         <widget class="QScrollArea" name="scrollArea">
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>68</width>
+             <height>345</height>
+            </rect>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_2">
+            <item>
+             <widget class="CommitDetails" name="widgetCommitDetails" native="true"/>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TreeView</class>
+   <extends>QTreeView</extends>
+   <header>core/treeview.h</header>
+  </customwidget>
+  <customwidget>
+   <class>CommitDetails</class>
+   <extends>QWidget</extends>
+   <header location="global">widgets/commitdetails.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>BranchesSelectionWidget</class>
+   <extends>QWidget</extends>
+   <header>widgets/branchesselectionwidget.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
